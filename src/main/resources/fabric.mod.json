@@ -1,0 +1,34 @@
+{
+	"schemaVersion": 1,
+	"id": "rageutils",
+	"version": "${version}",
+	"name": "RageUtils",
+	"description": "Quality of Life mod for RageMines originally made by wintahh and modified by UniqueMemory",
+	"authors": [
+		"UniqueMemory"
+	],
+	"contact": {
+		"homepage": "https://ragemines.com/",
+		"sources": "https://ragemines.com/"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/rageutils/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"preLaunch": [
+			"wintahh.rageutils.updater.EarlyUpdateBootstrap"
+		],
+		"client": [
+			"wintahh.rageutils.RageUtils"
+		]
+	},
+	"mixins": [
+		"rageutils.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.2",
+		"minecraft": ">=1.21 <1.22",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

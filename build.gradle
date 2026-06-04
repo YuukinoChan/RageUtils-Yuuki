@@ -1,0 +1,139 @@
+plugins {
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+    id 'maven-publish'
+}
+
+// ── Version matrix ──────────────────────────────────────────────────────────
+// new_api = true  → 1.21.4+ (Click mouse API, BipedEntityRenderState)
+// new_api = false → 1.21–1.21.3 (old double/double/int mouse API)
+def MC_VERSIONS = [
+    [mc: "1.21",    yarn: "1.21+build.9",    fapi: "0.100.8+1.21",    newApi: false],
+    [mc: "1.21.1",  yarn: "1.21.1+build.3",  fapi: "0.104.0+1.21.1",  newApi: false],
+    [mc: "1.21.2",  yarn: "1.21.2+build.1",  fapi: "0.110.0+1.21.2",  newApi: false],
+    [mc: "1.21.3",  yarn: "1.21.3+build.2",  fapi: "0.110.5+1.21.3",  newApi: false],
+    [mc: "1.21.4",  yarn: "1.21.4+build.8",  fapi: "0.119.5+1.21.4",  newApi: true],
+    [mc: "1.21.5",  yarn: "1.21.5+build.1",  fapi: "0.127.1+1.21.5",  newApi: true],
+    [mc: "1.21.6",  yarn: "1.21.6+build.1",  fapi: "0.130.0+1.21.6",  newApi: true],
+    [mc: "1.21.11", yarn: "1.21.11+build.5", fapi: "0.140.0+1.21.11", newApi: true],
+]
+
+group = project.maven_group
+
+base {
+    archivesName = "RageUtils-Yuuki"
+}
+
+repositories {}
+
+// ── Source sets ─────────────────────────────────────────────────────────────
+sourceSets {
+    compatOld {
+        java { srcDirs = ['src/compat-old/java'] }
+    }
+    compatNew {
+        java { srcDirs = ['src/compat-new/java'] }
+    }
+}
+
+// ── Per-version tasks ────────────────────────────────────────────────────────
+MC_VERSIONS.each { ver ->
+    def safeName = ver.mc.replace('.', '_')
+    def compatSrc = ver.newApi ? 'compatNew' : 'compatOld'
+
+    // Configuration for this version's dependencies
+    configurations.create("mc_${safeName}")
+
+    dependencies {
+        "mc_${safeName}"("com.mojang:minecraft:${ver.mc}")
+        "mc_${safeName}"("net.fabricmc:yarn:${ver.yarn}:v2")
+        "mc_${safeName}"("net.fabricmc:fabric-loader:${project.loader_version}")
+        "mc_${safeName}"("net.fabricmc.fabric-api:fabric-api:${ver.fapi}")
+    }
+
+    tasks.register("compileJava_${safeName}", JavaCompile) {
+        source = sourceSets.main.java + sourceSets."${compatSrc}".java
+        classpath = configurations."mc_${safeName}"
+        destinationDirectory = layout.buildDirectory.dir("classes/${safeName}")
+        options.release = 21
+        options.encoding = 'UTF-8'
+    }
+
+    tasks.register("jar_${safeName}", Jar) {
+        dependsOn "compileJava_${safeName}"
+        from layout.buildDirectory.dir("classes/${safeName}")
+        from(sourceSets.main.resources)
+        archiveClassifier = ver.mc
+        archiveVersion = project.mod_version
+        manifest {
+            attributes(['Implementation-Title': "RageUtils-Yuuki-${ver.mc}"])
+        }
+        doFirst {
+            // Patch fabric.mod.json minecraft version constraint on the fly
+            filesMatching("fabric.mod.json") {
+                filter { line ->
+                    line.replace('"minecraft": "~1.21.11"',
+                                 "\"minecraft\": \"~${ver.mc}\"")
+                        .replace('"version": "${version}"',
+                                 "\"version\": \"${project.mod_version}\"")
+                }
+            }
+        }
+    }
+}
+
+// ── Convenience task: build all versions ────────────────────────────────────
+tasks.register("buildAll") {
+    group = "build"
+    description = "Build jars for all supported MC versions"
+    dependsOn MC_VERSIONS.collect { ver -> "jar_${ver.mc.replace('.', '_')}" }
+    doLast {
+        println "\n=== Built jars ==="
+        MC_VERSIONS.each { ver ->
+            println "  RageUtils-Yuuki-${project.mod_version}-${ver.mc}.jar"
+        }
+    }
+}
+
+// Default build still builds the current version (1.21.11)
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+// Main source set includes the current compat (new API for 1.21.11)
+sourceSets.main.java.srcDirs += ['src/compat-new/java']
+
+processResources {
+    def version = project.mod_version
+    inputs.property "version", version
+    filesMatching("fabric.mod.json") {
+        expand "version": version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.name}" }
+    }
+}
+
+publishing {
+    publications {
+        create("mavenJava", MavenPublication) {
+            from components.java
+        }
+    }
+    repositories {}
+}
